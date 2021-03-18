@@ -1,7 +1,8 @@
 //! Companion of the [`loupe`](../loupe-derive/index.html) crate.
 
 use proc_macro::TokenStream;
-use quote::{format_ident, quote, quote_spanned};
+use proc_macro2::TokenStream as TokenStream2;
+use quote::{format_ident, quote, quote_spanned, ToTokens};
 use syn::{
     parse, Attribute, Data, DataEnum, DataStruct, DeriveInput, Fields, Generics, Ident, Index,
 };
@@ -79,10 +80,11 @@ fn derive_memory_usage_for_struct(
 ) -> TokenStream {
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
 
-    let sum = join_fold(
+    let field_names: Vec<IdentOrIndex> = vec![];
+    let (size, field_names) = join_fold(
         // Check all fields of the `struct`.
         match &data.fields {
-            // Field has the form:
+            // Field has a name, like in:
             //
             //     F { x, y }
             Fields::Named(ref fields) => fields
@@ -96,18 +98,21 @@ fn derive_memory_usage_for_struct(
                     let ident = field.ident.as_ref().unwrap();
                     let span = ident.span();
 
-                    Some(quote_spanned!(
-                        span => loupe::MemoryUsage::size_of_val(&self.#ident, visited) - std::mem::size_of_val(&self.#ident)
+                    Some((
+                        quote_spanned!(
+                            span => loupe::MemoryUsage::size_of_val(&self.#ident, visited) - std::mem::size_of_val(&self.#ident)
+                        ),
+                        vec![IdentOrIndex::Ident(ident.clone())],
                     ))
                 })
                 .collect(),
 
-            // Field has the form:
+            // Field is a unit, like in:
             //
             //     F
             Fields::Unit => vec![],
 
-            // Field has the form:
+            // Field has no name, like in:
             //
             //     F(x, y)
             Fields::Unnamed(ref fields) => fields
@@ -121,13 +126,16 @@ fn derive_memory_usage_for_struct(
 
                     let ident = Index::from(nth);
 
-                    Some(quote! { loupe::MemoryUsage::size_of_val(&self.#ident, visited) - std::mem::size_of_val(&self.#ident) })
+                    Some((
+                        quote! { loupe::MemoryUsage::size_of_val(&self.#ident, visited) - std::mem::size_of_val(&self.#ident) },
+                        vec![IdentOrIndex::Index(ident)],
+                    ))
                 })
                 .collect(),
         }
         .into_iter(),
-        |x, y| quote! { #x + #y },
-        quote! { 0 },
+        |(acc_size, mut acc_field_idents), (size, mut field_ident)| (quote! { #acc_size + #size }, { acc_field_idents.append(&mut field_ident); acc_field_idents }),
+        (quote! { 0 }, field_names),
     );
 
     // Implement the `MemoryUsage` trait for `struct_name`.
@@ -137,7 +145,34 @@ fn derive_memory_usage_for_struct(
         #where_clause
         {
             fn size_of_val(&self, visited: &mut loupe::MemoryUsageTracker) -> usize {
-                std::mem::size_of_val(self) + #sum
+                std::mem::size_of_val(self) + #size
+            }
+
+            fn graph_size_of_val(
+                &self,
+                grapher: &mut loupe::MemoryUsageGrapher,
+                tracker: &mut loupe::MemoryUsageTracker
+            ) -> std::io::Result<()> {
+                let struct_name = stringify!(#struct_name);
+                let fields: &str = concat!(#( " | <", stringify!(#field_names), "> ", stringify!(#field_names) ),*);
+                let links: &str = concat!(
+                    #( "\"", stringify!(#struct_name), "\":", stringify!(#field_names), " -> node???:??? [ label = \"...\" ]\n" ),*
+                );
+
+                grapher.writer().write_all(&format!(
+                    r#""{struct_name}" [
+  label = "<0> {struct_name}{fields}"
+  shape = "record"
+]
+
+{links}
+"#,
+                    struct_name = struct_name,
+                    fields = fields,
+                    links = links,
+                ).as_bytes())?;
+
+                Ok(())
             }
         }
     })
@@ -311,4 +346,18 @@ fn must_skip(attrs: &[Attribute]) -> bool {
     attrs.iter().any(|attr| {
         attr.path.is_ident("loupe") && matches!(attr.parse_args::<Ident>(), Ok(a) if a == "skip")
     })
+}
+
+enum IdentOrIndex {
+    Ident(Ident),
+    Index(Index),
+}
+
+impl ToTokens for IdentOrIndex {
+    fn to_tokens(&self, tokens: &mut TokenStream2) {
+        match self {
+            Self::Ident(ident) => ident.to_tokens(tokens),
+            Self::Index(index) => index.to_tokens(tokens),
+        }
+    }
 }
