@@ -58,6 +58,31 @@ impl MemoryUsageTracker for std::collections::HashSet<*const ()> {
     }
 }
 
+pub struct MemoryUsageGrapher<'a> {
+    writer: &'a mut dyn io::Write,
+    node_index: usize,
+}
+
+impl<'a> MemoryUsageGrapher<'a> {
+    pub fn new(writer: &'a mut dyn io::Write) -> Self {
+        Self {
+            writer,
+            node_index: 0,
+        }
+    }
+
+    pub fn get_node_index_and_increment(&mut self) -> usize {
+        let current = self.node_index;
+        self.node_index += 1;
+
+        current
+    }
+
+    pub fn writer(&mut self) -> &mut dyn io::Write {
+        self.writer
+    }
+}
+
 /// Traverse a value and collect its memory usage.
 pub trait MemoryUsage {
     /// Returns the size of the referenced value in bytes.
@@ -65,6 +90,18 @@ pub trait MemoryUsage {
     /// Recursively visits the value and any children returning the sum of their
     /// sizes. The size always includes any tail padding if applicable.
     fn size_of_val(&self, tracker: &mut dyn MemoryUsageTracker) -> usize;
+
+    fn graph_size_of_val(
+        &self,
+        grapher: &mut MemoryUsageGrapher,
+        tracker: &mut dyn MemoryUsageTracker,
+    ) -> io::Result<()> {
+        grapher
+            .writer
+            .write_all(self.size_of_val(tracker).to_string().as_ref())?;
+
+        Ok(())
+    }
 }
 
 /// Alias to `assert_eq!(loupe::MemoryUsage::size_of_val(&$value), $expected)`.

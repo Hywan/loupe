@@ -47,6 +47,17 @@ fn test_struct_field_ignored() {
             y: vec![1, 2, 3]
         }
     );
+
+    let mut s = Vec::<u8>::new();
+    let mut g = loupe::MemoryUsageGrapher::new(&mut s);
+    S {
+        x: vec![1, 2, 3],
+        y: vec![1, 2, 3],
+    }
+    .graph_size_of_val(&mut g, &mut BTreeSet::new())
+    .unwrap();
+
+    dbg!(String::from_utf8(s).unwrap());
 }
 
 #[test]
