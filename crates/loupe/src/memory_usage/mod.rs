@@ -30,6 +30,9 @@ pub use slice::*;
 pub use string::*;
 pub use sync::*;
 
+use std::collections;
+use std::io;
+
 /// Size of a pointer for the compilation target.
 pub const POINTER_BYTE_SIZE: usize = if cfg!(target_pointer_width = "16") {
     2
@@ -46,13 +49,13 @@ pub trait MemoryUsageTracker {
     fn track(&mut self, address: *const ()) -> bool;
 }
 
-impl MemoryUsageTracker for std::collections::BTreeSet<*const ()> {
+impl MemoryUsageTracker for collections::BTreeSet<*const ()> {
     fn track(&mut self, address: *const ()) -> bool {
         self.insert(address)
     }
 }
 
-impl MemoryUsageTracker for std::collections::HashSet<*const ()> {
+impl MemoryUsageTracker for collections::HashSet<*const ()> {
     fn track(&mut self, address: *const ()) -> bool {
         self.insert(address)
     }
@@ -71,11 +74,20 @@ impl<'a> MemoryUsageGrapher<'a> {
         }
     }
 
-    pub fn get_node_index_and_increment(&mut self) -> usize {
-        let current = self.node_index;
+    pub fn node_index(&self) -> usize {
+        self.node_index
+    }
+
+    pub fn increment_node_index(&mut self) -> usize {
         self.node_index += 1;
 
-        current
+        self.node_index
+    }
+
+    pub fn decrement_node_index(&mut self) -> usize {
+        self.node_index -= 1;
+
+        self.node_index
     }
 
     pub fn writer(&mut self) -> &mut dyn io::Write {
@@ -93,12 +105,14 @@ pub trait MemoryUsage {
 
     fn graph_size_of_val(
         &self,
-        grapher: &mut MemoryUsageGrapher,
-        tracker: &mut dyn MemoryUsageTracker,
+        _grapher: &mut MemoryUsageGrapher,
+        _tracker: &mut dyn MemoryUsageTracker,
     ) -> io::Result<()> {
+        /*
         grapher
-            .writer
+            .writer()
             .write_all(self.size_of_val(tracker).to_string().as_ref())?;
+        */
 
         Ok(())
     }

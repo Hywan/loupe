@@ -134,7 +134,12 @@ fn derive_memory_usage_for_struct(
                 .collect(),
         }
         .into_iter(),
-        |(acc_size, mut acc_field_idents), (size, mut field_ident)| (quote! { #acc_size + #size }, { acc_field_idents.append(&mut field_ident); acc_field_idents }),
+        |(acc_size, mut acc_field_idents), (size, mut field_ident)| {
+            (
+                quote! { #acc_size + #size },
+                { acc_field_idents.append(&mut field_ident); acc_field_idents }
+            )
+        },
         (quote! { 0 }, field_names),
     );
 
@@ -153,24 +158,48 @@ fn derive_memory_usage_for_struct(
                 grapher: &mut loupe::MemoryUsageGrapher,
                 tracker: &mut loupe::MemoryUsageTracker
             ) -> std::io::Result<()> {
-                let struct_name = stringify!(#struct_name);
-                let fields: &str = concat!(#( " | <", stringify!(#field_names), "> ", stringify!(#field_names) ),*);
-                let links: &str = concat!(
-                    #( "\"", stringify!(#struct_name), "\":", stringify!(#field_names), " -> node???:??? [ label = \"...\" ]\n" ),*
-                );
+                use std::borrow::BorrowMut;
+
+                let struct_node_index = grapher.node_index();
 
                 grapher.writer().write_all(&format!(
-                    r#""{struct_name}" [
-  label = "<0> {struct_name}{fields}"
+                    r#""node{node_index}" [
+  label = "<0> {struct_name} [{struct_size} bytes]{fields}"
   shape = "record"
-]
+];
 
-{links}
 "#,
-                    struct_name = struct_name,
-                    fields = fields,
-                    links = links,
+                    struct_size = loupe::MemoryUsage::size_of_val(self, tracker),
+                    node_index = struct_node_index,
+                    struct_name = stringify!(#struct_name),
+                    fields = format!(
+                        concat!(#( " | <", stringify!(#field_names), "> ", stringify!(#field_names), " [{} bytes]" ),* ),
+                        #(
+                            loupe::MemoryUsage::size_of_val(&self.#field_names, tracker),
+                        )*
+                    ),
                 ).as_bytes())?;
+
+                #(
+                    let field_node_index = grapher.increment_node_index();
+
+                    loupe::MemoryUsage::graph_size_of_val(
+                        &self.#field_names,
+                        grapher,
+                        tracker
+                    )?;
+
+                    // If a new node has been generated…
+                    if field_node_index != grapher.node_index() {
+                        grapher.writer().write_all(&format!(
+                            r#""node{struct_node_index}":{field_name} -> "node{field_node_index}":0
+    "#,
+                            struct_node_index = struct_node_index,
+                            field_name = stringify!(#field_names),
+                            field_node_index = field_node_index,
+                        ).as_bytes())?;
+                    }
+                )*
 
                 Ok(())
             }
