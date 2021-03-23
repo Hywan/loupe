@@ -1,5 +1,4 @@
-use loupe::{size_of_val, MemoryUsage, POINTER_BYTE_SIZE};
-use std::collections::BTreeSet;
+use loupe::{graph_size_of_val, size_of_val, MemoryUsage, POINTER_BYTE_SIZE};
 
 macro_rules! assert_size_of_val_eq {
     ($expected:expr, $value:expr) => {
@@ -15,35 +14,17 @@ fn test_grapher() {
         y: i32,
     }
 
-    assert_size_of_val_eq!(8, Point { x: 1, y: 2 });
-
     #[derive(MemoryUsage)]
     struct ThreePoints {
         a: Point,
         b: Point,
-        c: Point,
     }
 
-    assert_size_of_val_eq!(
-        24,
-        ThreePoints {
-            a: Point { x: 1, y: 2 },
-            b: Point { x: 3, y: 4 },
-            c: Point { x: 5, y: 6 },
-        }
-    );
-
-    let mut s = Vec::<u8>::new();
-    let mut g = loupe::MemoryUsageGrapher::new(&mut s);
-    ThreePoints {
+    dbg!(graph_size_of_val(&ThreePoints {
         a: Point { x: 1, y: 2 },
         b: Point { x: 3, y: 4 },
-        c: Point { x: 5, y: 6 },
-    }
-    .graph_size_of_val(&mut g, &mut BTreeSet::new())
-    .unwrap();
-
-    dbg!(String::from_utf8(s).unwrap());
+    })
+    .unwrap());
 }
 
 #[test]

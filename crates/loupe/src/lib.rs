@@ -93,6 +93,7 @@ pub use loupe_derive::*;
 pub use memory_usage::*;
 
 use std::collections::BTreeSet;
+use std::io;
 
 /// Returns the size of the pointer-to value in bytes. The size is
 /// calculated with `MemoryUsage::size_of_val`.
@@ -120,7 +121,25 @@ use std::collections::BTreeSet;
 /// }
 /// ```
 pub fn size_of_val<T: MemoryUsage>(value: &T) -> usize {
-    <T as MemoryUsage>::size_of_val(value, &mut BTreeSet::new())
+    T::size_of_val(value, &mut BTreeSet::new())
+}
+
+pub fn graph_size_of_val<T: MemoryUsage>(value: &T) -> io::Result<String> {
+    let mut string = Vec::<u8>::new();
+    let mut grapher = MemoryUsageGrapher::new(&mut string);
+
+    T::graph_size_of_val(value, &mut grapher, &mut BTreeSet::new())?;
+
+    Ok(format!(
+        r#"digraph {{
+graph [
+  rankdir = "LR"
+];
+
+{graph}
+}}"#,
+        graph = String::from_utf8(string).unwrap(),
+    ))
 }
 
 #[cfg(test)]
